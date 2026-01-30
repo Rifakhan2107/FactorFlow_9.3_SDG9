@@ -39,6 +39,9 @@ export interface User {
   industry?: Industry;
   kycStatus: KYCStatus;
   walletAddress?: string;
+  emissionsBaseline?: number;
+  offsetTarget?: number;
+  targetYear?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -90,6 +93,7 @@ export interface CarbonProject {
   complianceStatus: "compliant" | "non_compliant" | "pending";
   acvaReportId?: string;
   nftId?: string;
+  nftContractAddress?: string;
   createdAt: Date;
   updatedAt: Date;
 }

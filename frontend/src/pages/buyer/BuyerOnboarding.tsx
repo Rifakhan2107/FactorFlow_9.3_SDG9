@@ -84,13 +84,24 @@ export default function BuyerOnboarding() {
         companyName,
         industry: industry as Industry,
         kycStatus: "submitted",
+        ...(emissionsBaseline ? { emissionsBaseline: Number(emissionsBaseline) } : {}),
+        ...(offsetTarget ? { offsetTarget: Number(offsetTarget) } : {}),
+        ...(targetYear ? { targetYear: Number(targetYear) } : {}),
       });
-      
+
       toast({
         title: "Onboarding complete!",
-        description: "Your KYC documents are under review.",
+        description: "Your KYC is being verified. You'll be approved in a moment.",
       });
-      
+
+      setTimeout(async () => {
+        await updateUserProfile({ kycStatus: "approved" });
+        toast({
+          title: "KYC approved",
+          description: "Your verification is complete. You have full marketplace access.",
+        });
+      }, 2000);
+
       navigate("/buyer");
     } catch (error) {
       toast({

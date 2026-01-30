@@ -25,55 +25,8 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { ProjectType } from "@/types";
-import { getContractAddress } from "@/lib/contract";
-import { getListedNFTs } from "@/lib/firestore-listings";
+import { getListedNFTsAll } from "@/lib/firestore-listings";
 import type { MarketplaceListing } from "@/lib/firestore-listings";
-
-// Fallback mock listings when no contract or Firestore listings
-const mockListings: MarketplaceListing[] = [
-  {
-    id: "mock_1",
-    tokenId: 1001,
-    projectId: "proj-1",
-    sellerId: "seller-1",
-    contractAddress: "",
-    priceWei: "850000000000000000",
-    priceETH: 0.85,
-    metadata: {
-      name: "Amazon Rainforest Preservation",
-      description: "Large-scale reforestation project in the Amazon basin",
-      image: "https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=600&q=80",
-      projectType: "reforestation",
-      volumeTCO2e: 1500,
-      verificationProof: "0x...",
-      vintage: 2024,
-      location: "Brazil",
-    },
-    status: "listed",
-    listedAt: new Date(),
-  },
-  {
-    id: "mock_2",
-    tokenId: 1002,
-    projectId: "proj-2",
-    sellerId: "seller-2",
-    contractAddress: "",
-    priceWei: "1200000000000000000",
-    priceETH: 1.2,
-    metadata: {
-      name: "Solar Farm Initiative",
-      description: "Community solar power project reducing grid dependency",
-      image: "https://images.unsplash.com/photo-1509391366360-2e959784a276?w=600&q=80",
-      projectType: "renewable_energy",
-      volumeTCO2e: 2500,
-      verificationProof: "0x...",
-      vintage: 2024,
-      location: "India",
-    },
-    status: "listed",
-    listedAt: new Date(),
-  },
-];
 
 const projectTypeIcons: Record<ProjectType, typeof TreePine> = {
   reforestation: TreePine,
@@ -104,21 +57,15 @@ export default function MarketplacePage() {
   const [showFilters, setShowFilters] = useState(false);
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
   const [loadingListings, setLoadingListings] = useState(true);
-  const contractAddress = getContractAddress();
 
   useEffect(() => {
-    if (contractAddress) {
-      getListedNFTs(contractAddress)
-        .then(setListings)
-        .catch(() => setListings([]))
-        .finally(() => setLoadingListings(false));
-    } else {
-      setListings([]);
-      setLoadingListings(false);
-    }
-  }, [contractAddress]);
+    getListedNFTsAll()
+      .then(setListings)
+      .catch(() => setListings([]))
+      .finally(() => setLoadingListings(false));
+  }, []);
 
-  const displayListings = listings.length > 0 ? listings : mockListings;
+  const displayListings = listings;
 
   const filteredNFTs = displayListings.filter((nft) => {
     if (nft.status !== "listed") return false;
@@ -278,13 +225,13 @@ export default function MarketplacePage() {
                 </CardContent>
 
                 <CardFooter className="p-4 pt-0 flex gap-2">
-                  <Link to={`/marketplace/${nft.tokenId}`} className="flex-1">
+                  <Link to={`/marketplace/${encodeURIComponent(nft.id)}`} className="flex-1">
                     <Button variant="outline" className="w-full gap-2">
                       View Details
                       <ExternalLink className="h-3 w-3" />
                     </Button>
                   </Link>
-                  <Link to={`/marketplace/${nft.tokenId}`} className="flex-1">
+                  <Link to={`/marketplace/${encodeURIComponent(nft.id)}`} className="flex-1">
                     <Button variant="hero" className="w-full">
                       Buy Now
                     </Button>

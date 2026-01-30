@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWallet } from "@/contexts/WalletContext";
-import { getContractAddress } from "@/lib/contract";
+import { getCarbonCreditNFTContract, getCarbonCreditNFTFactory } from "@/lib/contract";
 import {
   Coins,
   Wallet,
@@ -19,10 +19,9 @@ import {
   Shield,
   Sparkles,
 } from "lucide-react";
-import { getVerifiedProjects } from "@/lib/firestore-projects";
+import { getVerifiedProjects, saveProjectContract, updateProjectNftId } from "@/lib/firestore-projects";
 import { addListing } from "@/lib/firestore-listings";
 import { uploadNFTMetadata } from "@/lib/nft-metadata";
-import { updateProjectNftId } from "@/lib/firestore-projects";
 import type { CarbonProject } from "@/types";
 import type { ProjectType } from "@/types";
 import { ethers } from "ethers";
@@ -40,7 +39,7 @@ const projectTypeLabels: Record<ProjectType, string> = {
 
 export default function NFTMinting() {
   const { user } = useAuth();
-  const { account, connect, isConnecting, error: walletError, contract } = useWallet();
+  const { account, connect, isConnecting, error: walletError, signer } = useWallet();
   const { toast } = useToast();
   const [verifiedProjects, setVerifiedProjects] = useState<CarbonProject[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
@@ -51,7 +50,6 @@ export default function NFTMinting() {
   const [listingProjectId, setListingProjectId] = useState<string | null>(null);
 
   const walletConnected = !!account;
-  const contractAddress = getContractAddress();
 
   useEffect(() => {
     if (!user?.id || user.role !== "seller") return;
@@ -62,13 +60,26 @@ export default function NFTMinting() {
   }, [user?.id, user?.role]);
 
   const handleMint = async (project: CarbonProject) => {
-    if (!contract || !account) {
+    if (!signer || !account) {
       toast({ title: "Connect wallet", description: "Please connect MetaMask first.", variant: "destructive" });
       return;
     }
     setIsMinting(true);
     setSelectedProject(project.id);
     try {
+      let contractAddress = project.nftContractAddress;
+      if (!contractAddress) {
+        toast({ title: "Deploying contract...", description: "Creating NFT contract for this project." });
+        const factory = getCarbonCreditNFTFactory(signer);
+        const contractInstance = await factory.deploy(account);
+        await contractInstance.waitForDeployment();
+        contractAddress = await contractInstance.getAddress();
+        await saveProjectContract(project.id, contractAddress);
+        setVerifiedProjects((prev) =>
+          prev.map((p) => (p.id === project.id ? { ...p, nftContractAddress: contractAddress } : p))
+        );
+      }
+      const contract = getCarbonCreditNFTContract(signer, contractAddress);
       const imageUrl = project.photos?.[0] || "https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=600&q=80";
       const vintage = project.startDate ? new Date(project.startDate).getFullYear() : new Date().getFullYear();
       const location = `${project.location.region}, ${project.location.country}`;
@@ -97,10 +108,10 @@ export default function NFTMinting() {
       );
       const tokenId = transferLog?.topics?.[3] ? Number(ethers.toBigInt(transferLog.topics[3])) : undefined;
       if (tokenId !== undefined) {
-        await updateProjectNftId(project.id, tokenId, contractAddress);
+        await updateProjectNftId(project.id, tokenId, contractAddress!);
         toast({ title: "NFT Minted!", description: `Token ID: ${tokenId}. You can now list it.` });
         setVerifiedProjects((prev) =>
-          prev.map((p) => (p.id === project.id ? { ...p, nftId: String(tokenId) } : p))
+          prev.map((p) => (p.id === project.id ? { ...p, nftId: String(tokenId), nftContractAddress: contractAddress } : p))
         );
       } else {
         toast({ title: "NFT Minted!", description: "Transaction confirmed. Refresh to see token ID." });
@@ -120,18 +131,24 @@ export default function NFTMinting() {
       toast({ title: "No NFT", description: "Mint this project first.", variant: "destructive" });
       return;
     }
+    const contractAddress = project.nftContractAddress;
+    if (!contractAddress) {
+      toast({ title: "No contract", description: "Project has no NFT contract. Mint first.", variant: "destructive" });
+      return;
+    }
     const priceEth = parseFloat(price);
     if (!price || isNaN(priceEth) || priceEth <= 0) {
       toast({ title: "Invalid price", description: "Enter a price in ETH.", variant: "destructive" });
       return;
     }
-    if (!contract || !account) {
+    if (!signer || !account) {
       toast({ title: "Connect wallet", description: "Please connect MetaMask first.", variant: "destructive" });
       return;
     }
     setIsListing(true);
     setListingProjectId(project.id);
     try {
+      const contract = getCarbonCreditNFTContract(signer, contractAddress);
       const priceWei = ethers.parseEther(price);
       const tx = await contract.list(tokenId, priceWei);
       await tx.wait();
@@ -292,7 +309,7 @@ export default function NFTMinting() {
                           <p className="text-sm font-medium">NFT Minted</p>
                           <p className="text-xs text-muted-foreground">Token ID: #{tokenId}</p>
                         </div>
-                        {contractAddress ? (
+                        {project.nftContractAddress ? (
                           <div className="flex items-center gap-3 flex-wrap">
                             <div className="flex items-center gap-2">
                               <Label htmlFor={`price-${project.id}`} className="text-sm">
@@ -328,7 +345,7 @@ export default function NFTMinting() {
                       <Button
                         variant="hero"
                         className="w-full gap-2"
-                        disabled={!walletConnected || !contract || isMinting}
+                        disabled={!walletConnected || !signer || isMinting}
                         onClick={() => handleMint(project)}
                       >
                         {isMinting && selectedProject === project.id ? (

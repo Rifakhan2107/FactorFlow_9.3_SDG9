@@ -23,18 +23,12 @@ import {
 } from "lucide-react";
 import { getPurchasesByBuyer } from "@/lib/firestore-listings";
 import type { MarketplaceListing } from "@/lib/firestore-listings";
-
-// Mock data for dashboard
-const mockEmissions = {
-  current: 12500,
-  baseline: 15000,
-  target: 5000,
-  offset: 2000,
-};
+import { getCarbonCreditNFTContract } from "@/lib/contract";
+import type { BuyerProfile } from "@/types";
 
 export default function BuyerDashboard() {
   const { user } = useAuth();
-  const { contract } = useWallet();
+  const { signer } = useWallet();
   const { toast } = useToast();
   const [purchases, setPurchases] = useState<(MarketplaceListing & { isRetired?: boolean })[]>([]);
   const [loadingPurchases, setLoadingPurchases] = useState(true);
@@ -48,24 +42,33 @@ export default function BuyerDashboard() {
         return list;
       })
       .then((list) => {
-        if (!contract || list.length === 0) return;
-        Promise.all(list.map(async (p) => ({ ...p, isRetired: await contract.retired(p.tokenId) })))
-          .then(setPurchases)
-          .catch(() => {});
+        if (!signer || list.length === 0) return;
+        Promise.all(
+          list.map(async (p) => {
+            try {
+              const contract = getCarbonCreditNFTContract(signer, p.contractAddress);
+              const isRetired = await contract.retired(p.tokenId);
+              return { ...p, isRetired };
+            } catch {
+              return { ...p, isRetired: false };
+            }
+          })
+        ).then(setPurchases);
       })
       .finally(() => setLoadingPurchases(false));
-  }, [user?.id, contract]);
+  }, [user?.id, signer]);
 
-  const handleRetire = async (tokenId: number, listingId: string) => {
-    if (!contract) {
+  const handleRetire = async (purchase: MarketplaceListing & { isRetired?: boolean }) => {
+    if (!signer) {
       toast({ title: "Connect wallet", description: "Connect MetaMask to retire credits.", variant: "destructive" });
       return;
     }
-    setRetiringId(listingId);
+    setRetiringId(purchase.id);
     try {
-      const tx = await contract.retire(tokenId);
+      const contract = getCarbonCreditNFTContract(signer, purchase.contractAddress);
+      const tx = await contract.retire(purchase.tokenId);
       await tx.wait();
-      setPurchases((prev) => prev.map((p) => (p.id === listingId ? { ...p, isRetired: true } : p)));
+      setPurchases((prev) => prev.map((p) => (p.id === purchase.id ? { ...p, isRetired: true } : p)));
       toast({ title: "Credit retired", description: "This carbon credit has been marked as used for offset." });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Retire failed";
@@ -75,9 +78,14 @@ export default function BuyerDashboard() {
     }
   };
 
-  const netEmissions = mockEmissions.current - mockEmissions.offset;
-  const progressToTarget = ((mockEmissions.baseline - netEmissions) / (mockEmissions.baseline - mockEmissions.target)) * 100;
-  const remainingOffset = netEmissions - mockEmissions.target;
+  const buyer = user as BuyerProfile | undefined;
+  const baseline = typeof buyer?.emissionsBaseline === "number" ? buyer.emissionsBaseline : 0;
+  const target = typeof buyer?.offsetTarget === "number" ? buyer.offsetTarget : 0;
+  const totalOffset = purchases.reduce((sum, p) => sum + (p.metadata?.volumeTCO2e ?? 0), 0);
+  const netEmissions = Math.max(0, baseline - totalOffset);
+  const progressToTarget =
+    baseline > target ? Math.min(100, ((baseline - netEmissions) / (baseline - target)) * 100) : 0;
+  const remainingOffset = Math.max(0, netEmissions - target);
 
   return (
     <div className="p-8">
@@ -120,11 +128,11 @@ export default function BuyerDashboard() {
               <div className="h-12 w-12 rounded-xl bg-primary/20 flex items-center justify-center">
                 <BarChart3 className="h-6 w-6 text-primary" />
               </div>
-              <Badge variant="outline">2024</Badge>
+              <Badge variant="outline">{buyer?.targetYear || "—"}</Badge>
             </div>
-            <p className="text-sm text-muted-foreground">Current Emissions</p>
+            <p className="text-sm text-muted-foreground">Emissions Baseline</p>
             <p className="font-display text-3xl font-bold">
-              {mockEmissions.current.toLocaleString()}
+              {baseline.toLocaleString()}
             </p>
             <p className="text-sm text-muted-foreground">tCO2e</p>
           </CardContent>
@@ -140,7 +148,7 @@ export default function BuyerDashboard() {
             </div>
             <p className="text-sm text-muted-foreground">Total Offset</p>
             <p className="font-display text-3xl font-bold">
-              {mockEmissions.offset.toLocaleString()}
+              {totalOffset.toLocaleString()}
             </p>
             <p className="text-sm text-muted-foreground">tCO2e</p>
           </CardContent>
@@ -189,7 +197,7 @@ export default function BuyerDashboard() {
               Progress to Net-Zero Target
             </CardTitle>
             <CardDescription>
-              Your journey from {mockEmissions.baseline.toLocaleString()} tCO2e baseline to {mockEmissions.target.toLocaleString()} tCO2e target
+              Your journey from {baseline.toLocaleString()} tCO2e baseline to {target.toLocaleString()} tCO2e target
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -203,7 +211,7 @@ export default function BuyerDashboard() {
             <div className="flex justify-between text-sm">
               <div>
                 <p className="text-muted-foreground">Baseline</p>
-                <p className="font-semibold">{mockEmissions.baseline.toLocaleString()} tCO2e</p>
+                <p className="font-semibold">{baseline.toLocaleString()} tCO2e</p>
               </div>
               <div className="text-center">
                 <p className="text-muted-foreground">Current Net</p>
@@ -211,7 +219,7 @@ export default function BuyerDashboard() {
               </div>
               <div className="text-right">
                 <p className="text-muted-foreground">Target</p>
-                <p className="font-semibold text-success">{mockEmissions.target.toLocaleString()} tCO2e</p>
+                <p className="font-semibold text-success">{target.toLocaleString()} tCO2e</p>
               </div>
             </div>
           </CardContent>
@@ -305,7 +313,7 @@ export default function BuyerDashboard() {
                         variant="outline"
                         size="sm"
                         className="gap-2"
-                        onClick={() => handleRetire(purchase.tokenId, purchase.id)}
+                        onClick={() => handleRetire(purchase)}
                         disabled={!!retiringId}
                       >
                         {retiringId === purchase.id ? (

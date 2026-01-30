@@ -1,4 +1,4 @@
-import { Contract, BrowserProvider, Signer } from "ethers";
+import { Contract, BrowserProvider, Signer, ContractFactory } from "ethers";
 import CarbonCreditNFTAbi from "./contracts/CarbonCreditNFT.json";
 
 const CONTRACT_ADDRESS =
@@ -11,12 +11,21 @@ export function getContractAddress(): string {
   return CONTRACT_ADDRESS;
 }
 
-export function getCarbonCreditNFTContract(signer: Signer): Contract {
-  const address = getContractAddress();
-  if (!address) {
-    throw new Error("VITE_CARBON_CREDIT_NFT_ADDRESS is not set");
+export function getCarbonCreditNFTContract(signer: Signer, address?: string): Contract {
+  const addr = address || getContractAddress();
+  if (!addr) {
+    throw new Error("Contract address is required (pass address or set VITE_CARBON_CREDIT_NFT_ADDRESS)");
   }
-  return new Contract(address, CarbonCreditNFTAbi.abi, signer);
+  return new Contract(addr, CarbonCreditNFTAbi.abi, signer);
+}
+
+export function getCarbonCreditNFTFactory(signer: Signer): ContractFactory {
+  const abi = CarbonCreditNFTAbi.abi as any;
+  const bytecode = (CarbonCreditNFTAbi as any).bytecode;
+  if (!bytecode) {
+    throw new Error("CarbonCreditNFT bytecode not found in artifact");
+  }
+  return new ContractFactory(abi, bytecode, signer);
 }
 
 export async function getProvider(): Promise<BrowserProvider> {

@@ -5,8 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useWallet } from "@/contexts/WalletContext";
-import { getContractAddress } from "@/lib/contract";
-import { getListing, markListingSold } from "@/lib/firestore-listings";
+import { getCarbonCreditNFTContract } from "@/lib/contract";
+import { getListingById, markListingSold } from "@/lib/firestore-listings";
 import type { MarketplaceListing } from "@/lib/firestore-listings";
 import {
   ArrowLeft,
@@ -34,44 +34,33 @@ export default function MarketplaceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { account, connect, isConnecting, contract } = useWallet();
+  const { account, connect, isConnecting, signer } = useWallet();
   const [listing, setListing] = useState<MarketplaceListing | null>(null);
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState(false);
-
-  const contractAddress = getContractAddress();
 
   useEffect(() => {
     if (id === undefined || id === "") {
       setLoading(false);
       return;
     }
-    const tokenId = parseInt(id, 10);
-    if (isNaN(tokenId)) {
-      setLoading(false);
-      return;
-    }
-    const addr = contractAddress || "";
-    if (!addr) {
-      setListing(null);
-      setLoading(false);
-      return;
-    }
-    getListing(addr, tokenId)
+    const listingId = decodeURIComponent(id);
+    getListingById(listingId)
       .then((l) => setListing(l ?? null))
       .catch(() => setListing(null))
       .finally(() => setLoading(false));
-  }, [id, contractAddress]);
+  }, [id]);
 
   const handleBuy = async () => {
     if (!listing || listing.status !== "listed") return;
-    if (!contract || !account) {
+    if (!signer || !account) {
       toast({ title: "Connect wallet", description: "Please connect MetaMask to purchase.", variant: "destructive" });
       connect();
       return;
     }
     setPurchasing(true);
     try {
+      const contract = getCarbonCreditNFTContract(signer, listing.contractAddress);
       const priceWei = BigInt(listing.priceWei || "0");
       const tx = await contract.buy(listing.tokenId, { value: priceWei });
       await tx.wait();

@@ -82,6 +82,40 @@ export async function getListedNFTs(contractAddress: string): Promise<Marketplac
   });
 }
 
+export async function getListedNFTsAll(): Promise<MarketplaceListing[]> {
+  const q = query(
+    collection(db, LISTINGS_COLLECTION),
+    where("status", "==", "listed")
+  );
+  const snap = await getDocs(q);
+  const listings = snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      ...data,
+      id: d.id,
+      listedAt: data.listedAt?.toDate?.() ?? data.listedAt,
+      soldAt: data.soldAt?.toDate?.() ?? data.soldAt,
+    } as MarketplaceListing;
+  });
+  return listings.sort((a, b) => {
+    const aTime = a.listedAt instanceof Date ? a.listedAt.getTime() : 0;
+    const bTime = b.listedAt instanceof Date ? b.listedAt.getTime() : 0;
+    return bTime - aTime;
+  });
+}
+
+export async function getListingById(listingId: string): Promise<MarketplaceListing | null> {
+  const snap = await getDoc(doc(db, LISTINGS_COLLECTION, listingId));
+  if (!snap.exists()) return null;
+  const data = snap.data();
+  return {
+    ...data,
+    id: snap.id,
+    listedAt: data.listedAt?.toDate?.() ?? data.listedAt,
+    soldAt: data.soldAt?.toDate?.() ?? data.soldAt,
+  } as MarketplaceListing;
+}
+
 export async function getListing(
   contractAddress: string,
   tokenId: number
@@ -101,11 +135,10 @@ export async function getListing(
 export async function getPurchasesByBuyer(buyerId: string): Promise<MarketplaceListing[]> {
   const q = query(
     collection(db, LISTINGS_COLLECTION),
-    where("buyerId", "==", buyerId),
-    orderBy("soldAt", "desc")
+    where("buyerId", "==", buyerId)
   );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => {
+  const purchases = snap.docs.map((d) => {
     const data = d.data();
     return {
       ...data,
@@ -113,5 +146,10 @@ export async function getPurchasesByBuyer(buyerId: string): Promise<MarketplaceL
       listedAt: data.listedAt?.toDate?.() ?? data.listedAt,
       soldAt: data.soldAt?.toDate?.() ?? data.soldAt,
     } as MarketplaceListing;
+  });
+  return purchases.sort((a, b) => {
+    const aTime = a.soldAt instanceof Date ? a.soldAt.getTime() : 0;
+    const bTime = b.soldAt instanceof Date ? b.soldAt.getTime() : 0;
+    return bTime - aTime;
   });
 }

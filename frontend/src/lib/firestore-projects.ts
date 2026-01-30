@@ -107,8 +107,28 @@ export async function getProjectsBySeller(sellerId: string): Promise<CarbonProje
 }
 
 export async function getVerifiedProjects(sellerId: string): Promise<CarbonProject[]> {
-  const all = await getProjectsBySeller(sellerId);
-  return all.filter((p) => p.verificationStatus === "verified");
+  const q = query(
+    collection(db, PROJECTS_COLLECTION),
+    where("sellerId", "==", sellerId),
+    where("verificationStatus", "==", "verified")
+  );
+  const snap = await getDocs(q);
+  const projects = snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      ...data,
+      id: d.id,
+      startDate: data.startDate?.toDate?.() ?? data.startDate,
+      endDate: data.endDate?.toDate?.() ?? data.endDate,
+      createdAt: data.createdAt?.toDate?.() ?? data.createdAt,
+      updatedAt: data.updatedAt?.toDate?.() ?? data.updatedAt,
+    } as CarbonProject;
+  });
+  return projects.sort((a, b) => {
+    const aTime = a.updatedAt instanceof Date ? a.updatedAt.getTime() : 0;
+    const bTime = b.updatedAt instanceof Date ? b.updatedAt.getTime() : 0;
+    return bTime - aTime;
+  });
 }
 
 export async function updateProjectVerification(
@@ -162,6 +182,17 @@ export async function updateProjectNftId(
   const docRef = doc(db, PROJECTS_COLLECTION, projectId);
   await updateDoc(docRef, {
     nftId: String(tokenId),
+    nftContractAddress: contractAddress,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function saveProjectContract(
+  projectId: string,
+  contractAddress: string
+): Promise<void> {
+  const docRef = doc(db, PROJECTS_COLLECTION, projectId);
+  await updateDoc(docRef, {
     nftContractAddress: contractAddress,
     updatedAt: serverTimestamp(),
   });

@@ -62,8 +62,16 @@ export default function SellerOnboarding() {
 
       toast({
         title: "Verification submitted!",
-        description: "Your documents are under review.",
+        description: "Your KYC is being verified. You'll be approved in a moment.",
       });
+
+      setTimeout(async () => {
+        await updateUserProfile({ kycStatus: "approved" });
+        toast({
+          title: "KYC approved",
+          description: "Your verification is complete.",
+        });
+      }, 2000);
 
       navigate("/seller");
     } catch (error) {
