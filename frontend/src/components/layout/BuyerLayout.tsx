@@ -1,6 +1,6 @@
-import { ReactNode } from "react";
 import { Link, useLocation, Outlet } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useWallet } from "@/contexts/WalletContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -13,8 +13,7 @@ import {
   LogOut,
   Wallet,
   Target,
-  Upload,
-  ChevronRight,
+  Loader2,
 } from "lucide-react";
 
 const buyerNavItems = [
@@ -28,6 +27,7 @@ const buyerNavItems = [
 
 export default function BuyerLayout() {
   const { user, logout } = useAuth();
+  const { account, connect, isConnecting } = useWallet();
   const location = useLocation();
 
   const isActive = (path: string) => {
@@ -89,10 +89,17 @@ export default function BuyerLayout() {
 
         {/* Wallet */}
         <div className="p-4 border-t border-sidebar-border">
-          <Button variant="outline" className="w-full justify-start gap-3">
-            <Wallet className="h-4 w-4" />
-            Connect Wallet
-          </Button>
+          {account ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Wallet className="h-4 w-4 shrink-0" />
+              <span className="truncate">{account.slice(0, 6)}...{account.slice(-4)}</span>
+            </div>
+          ) : (
+            <Button variant="outline" className="w-full justify-start gap-3" onClick={connect} disabled={isConnecting}>
+              {isConnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
+              Connect Wallet
+            </Button>
+          )}
         </div>
 
         {/* Logout */}

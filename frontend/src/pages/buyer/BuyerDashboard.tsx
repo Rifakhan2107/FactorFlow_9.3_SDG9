@@ -1,9 +1,12 @@
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useWallet } from "@/contexts/WalletContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { useToast } from "@/hooks/use-toast";
 import {
   BarChart3,
   TrendingDown,
@@ -12,11 +15,14 @@ import {
   FileText,
   ArrowRight,
   Leaf,
-  Zap,
   AlertCircle,
   CheckCircle,
   Clock,
+  Loader2,
+  Ban,
 } from "lucide-react";
+import { getPurchasesByBuyer } from "@/lib/firestore-listings";
+import type { MarketplaceListing } from "@/lib/firestore-listings";
 
 // Mock data for dashboard
 const mockEmissions = {
@@ -26,32 +32,48 @@ const mockEmissions = {
   offset: 2000,
 };
 
-const mockRecentPurchases = [
-  {
-    id: "1",
-    name: "Amazon Rainforest Preservation",
-    volume: 500,
-    date: "2024-01-15",
-    status: "retired",
-  },
-  {
-    id: "2",
-    name: "Solar Farm Initiative",
-    volume: 300,
-    date: "2024-01-10",
-    status: "verified",
-  },
-  {
-    id: "3",
-    name: "Wind Energy Farm",
-    volume: 200,
-    date: "2024-01-05",
-    status: "pending",
-  },
-];
-
 export default function BuyerDashboard() {
   const { user } = useAuth();
+  const { contract } = useWallet();
+  const { toast } = useToast();
+  const [purchases, setPurchases] = useState<(MarketplaceListing & { isRetired?: boolean })[]>([]);
+  const [loadingPurchases, setLoadingPurchases] = useState(true);
+  const [retiringId, setRetiringId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    getPurchasesByBuyer(user.id)
+      .then((list) => {
+        setPurchases(list);
+        return list;
+      })
+      .then((list) => {
+        if (!contract || list.length === 0) return;
+        Promise.all(list.map(async (p) => ({ ...p, isRetired: await contract.retired(p.tokenId) })))
+          .then(setPurchases)
+          .catch(() => {});
+      })
+      .finally(() => setLoadingPurchases(false));
+  }, [user?.id, contract]);
+
+  const handleRetire = async (tokenId: number, listingId: string) => {
+    if (!contract) {
+      toast({ title: "Connect wallet", description: "Connect MetaMask to retire credits.", variant: "destructive" });
+      return;
+    }
+    setRetiringId(listingId);
+    try {
+      const tx = await contract.retire(tokenId);
+      await tx.wait();
+      setPurchases((prev) => prev.map((p) => (p.id === listingId ? { ...p, isRetired: true } : p)));
+      toast({ title: "Credit retired", description: "This carbon credit has been marked as used for offset." });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Retire failed";
+      toast({ title: "Retire failed", description: message, variant: "destructive" });
+    } finally {
+      setRetiringId(null);
+    }
+  };
 
   const netEmissions = mockEmissions.current - mockEmissions.offset;
   const progressToTarget = ((mockEmissions.baseline - netEmissions) / (mockEmissions.baseline - mockEmissions.target)) * 100;
@@ -223,54 +245,82 @@ export default function BuyerDashboard() {
         </Card>
       </div>
 
-      {/* Recent Purchases */}
+      {/* Your Carbon Credits (Purchases) */}
       <Card variant="glass">
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>Recent Purchases</CardTitle>
-            <CardDescription>Your latest carbon credit acquisitions</CardDescription>
+            <CardTitle>Your Carbon Credits</CardTitle>
+            <CardDescription>Purchased credits — retire when used for offset</CardDescription>
           </div>
-          <Link to="/buyer/purchases">
+          <Link to="/marketplace">
             <Button variant="ghost" size="sm" className="gap-2">
-              View All
+              Browse Marketplace
               <ArrowRight className="h-4 w-4" />
             </Button>
           </Link>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {mockRecentPurchases.map((purchase) => (
-              <div
-                key={purchase.id}
-                className="flex items-center justify-between p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Leaf className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="font-medium">{purchase.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {purchase.volume} tCO2e • {new Date(purchase.date).toLocaleDateString()}
-                    </p>
-                  </div>
+          {loadingPurchases ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {purchases.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Leaf className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>No purchases yet. Buy carbon credit NFTs from the marketplace.</p>
+                  <Link to="/marketplace" className="mt-2 inline-block">
+                    <Button variant="hero" size="sm" className="gap-2">
+                      Go to Marketplace
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </Link>
                 </div>
-                <Badge
-                  variant={
-                    purchase.status === "retired"
-                      ? "success"
-                      : purchase.status === "verified"
-                      ? "verified"
-                      : "pending"
-                  }
-                >
-                  {purchase.status === "retired" && <CheckCircle className="h-3 w-3 mr-1" />}
-                  {purchase.status === "pending" && <Clock className="h-3 w-3 mr-1" />}
-                  {purchase.status.charAt(0).toUpperCase() + purchase.status.slice(1)}
-                </Badge>
-              </div>
-            ))}
-          </div>
+              ) : (
+                purchases.map((purchase) => (
+                  <div
+                    key={purchase.id}
+                    className="flex items-center justify-between p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                        <Leaf className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium">{purchase.metadata.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {purchase.metadata.volumeTCO2e.toLocaleString()} tCO2e • #{purchase.tokenId}
+                          {purchase.soldAt && ` • ${new Date(purchase.soldAt).toLocaleDateString()}`}
+                        </p>
+                      </div>
+                    </div>
+                    {purchase.isRetired ? (
+                      <Badge variant="success">
+                        <CheckCircle className="h-3 w-3 mr-1" />
+                        Retired
+                      </Badge>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => handleRetire(purchase.tokenId, purchase.id)}
+                        disabled={!!retiringId}
+                      >
+                        {retiringId === purchase.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Ban className="h-3 w-3" />
+                        )}
+                        Retire
+                      </Button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -1,0 +1,23 @@
+[
+  "function mint(address to, string tokenURI, string projectId, uint256 volumeTCO2e, bytes32 verificationProofHash) returns (uint256)",
+  "function list(uint256 tokenId, uint256 priceWei)",
+  "function unlist(uint256 tokenId)",
+  "function buy(uint256 tokenId) payable",
+  "function retire(uint256 tokenId)",
+  "function listingPrice(uint256 tokenId) view returns (uint256)",
+  "function getListingPrice(uint256 tokenId) view returns (uint256)",
+  "function isListed(uint256 tokenId) view returns (bool)",
+  "function retired(uint256 tokenId) view returns (bool)",
+  "function projectIdOf(uint256 tokenId) view returns (string)",
+  "function volumeTCO2eOf(uint256 tokenId) view returns (uint256)",
+  "function verificationProofOf(uint256 tokenId) view returns (bytes32)",
+  "function ownerOf(uint256 tokenId) view returns (address)",
+  "function tokenURI(uint256 tokenId) view returns (string)",
+  "function balanceOf(address owner) view returns (uint256)",
+  "function minter() view returns (address)",
+  "event Listed(uint256 indexed tokenId, address indexed seller, uint256 priceWei)",
+  "event Unlisted(uint256 indexed tokenId, address indexed seller)",
+  "event Sold(uint256 indexed tokenId, address indexed buyer, address indexed seller, uint256 priceWei)",
+  "event Retired(uint256 indexed tokenId, address indexed retirer)",
+  "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
+]

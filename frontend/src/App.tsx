@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { WalletProvider } from "@/contexts/WalletContext";
 
 // Layouts
 import { MainLayout } from "@/components/layout/MainLayout";
@@ -14,6 +15,7 @@ import SellerLayout from "@/components/layout/SellerLayout";
 import LandingPage from "@/pages/LandingPage";
 import AuthPage from "@/pages/AuthPage";
 import MarketplacePage from "@/pages/MarketplacePage";
+import MarketplaceDetailPage from "@/pages/MarketplaceDetailPage";
 import NotFound from "@/pages/NotFound";
 
 // Buyer Pages
@@ -31,6 +33,7 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
+      <WalletProvider>
       <TooltipProvider>
         <Toaster />
         <Sonner />
@@ -40,6 +43,7 @@ const App = () => (
             <Route element={<MainLayout />}>
               <Route path="/" element={<LandingPage />} />
               <Route path="/marketplace" element={<MarketplacePage />} />
+              <Route path="/marketplace/:id" element={<MarketplaceDetailPage />} />
             </Route>
 
             {/* Auth page (no layout) */}
@@ -64,6 +68,7 @@ const App = () => (
           </Routes>
         </BrowserRouter>
       </TooltipProvider>
+      </WalletProvider>
     </AuthProvider>
   </QueryClientProvider>
 );

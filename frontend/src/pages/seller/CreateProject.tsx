@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -25,8 +26,19 @@ import {
   Calendar,
   Leaf,
   X,
+  Sparkles,
+  Send,
 } from "lucide-react";
 import { ProjectType } from "@/types";
+import {
+  createProject as createProjectInFirestore,
+  uploadProjectFile,
+  saveACVAReport,
+  updateProjectWithReport,
+} from "@/lib/firestore-projects";
+import { generateACVAReport } from "@/lib/gemini";
+import { collection, doc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 const projectTypes: { value: ProjectType; label: string }[] = [
   { value: "reforestation", label: "Reforestation" },
@@ -44,14 +56,20 @@ const steps = [
   { id: 2, title: "Documentation", description: "Upload docs" },
   { id: 3, title: "Photos", description: "Project images" },
   { id: 4, title: "Review", description: "Final check" },
+  { id: 5, title: "ACVA Report", description: "Generate & submit" },
 ];
 
 export default function CreateProject() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { toast } = useToast();
 
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [isSubmittingACVA, setIsSubmittingACVA] = useState(false);
+  const [acvaReportContent, setAcvaReportContent] = useState("");
+  const [createdProjectId, setCreatedProjectId] = useState<string | null>(null);
 
   // Form state
   const [name, setName] = useState("");
@@ -79,7 +97,7 @@ export default function CreateProject() {
   };
 
   const handleNext = () => {
-    if (currentStep < 4) {
+    if (currentStep < 5) {
       setCurrentStep(currentStep + 1);
     }
   };
@@ -91,18 +109,106 @@ export default function CreateProject() {
   };
 
   const handleSubmit = async () => {
+    if (!user?.id) {
+      toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
+      return;
+    }
     setIsLoading(true);
-    
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    
-    toast({
-      title: "Project created!",
-      description: "Your project has been submitted for review.",
-    });
-    
-    setIsLoading(false);
-    navigate("/seller/projects");
+    try {
+      const pid = doc(collection(db, "projects")).id;
+      const photoUrls: string[] = [];
+      for (let i = 0; i < photos.length; i++) {
+        const url = await uploadProjectFile(pid, "photos", photos[i]);
+        photoUrls.push(url);
+      }
+      const govUrl = govApprovalDoc
+        ? await uploadProjectFile(pid, "docs", govApprovalDoc)
+        : undefined;
+      const complianceUrl = complianceDoc
+        ? await uploadProjectFile(pid, "docs", complianceDoc)
+        : undefined;
+      const id = await createProjectInFirestore(
+        {
+          sellerId: user.id,
+          name,
+          description,
+          type: type as ProjectType,
+          location: { country, region },
+          startDate: startDate ? new Date(startDate) : new Date(),
+          volumeTCO2e: Number(volume) || 0,
+          monitoringPlan,
+          governmentApprovalDocUrl: govUrl,
+          complianceDocUrl: complianceUrl,
+          photoUrls,
+          complianceStatus: complianceDoc ? "compliant" : "pending",
+        },
+        pid
+      );
+      setCreatedProjectId(id);
+      toast({
+        title: "Project created!",
+        description: "Now generate your ACVA report and submit for verification.",
+      });
+      setCurrentStep(5);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to create project";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGenerateReport = async () => {
+    setIsGeneratingReport(true);
+    setAcvaReportContent("");
+    try {
+      const report = await generateACVAReport({
+        name,
+        description,
+        type: type as ProjectType,
+        country,
+        region,
+        volumeTCO2e: Number(volume) || 0,
+        startDate,
+        monitoringPlan,
+        complianceStatus: complianceDoc ? "compliant" : "pending",
+      });
+      setAcvaReportContent(report);
+      toast({ title: "Report generated", description: "ACVA-format report ready. Review and submit." });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to generate report";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
+  const handleSubmitToACVA = async () => {
+    if (!createdProjectId || !acvaReportContent) {
+      toast({
+        title: "Generate report first",
+        description: "Generate the ACVA report before submitting.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsSubmittingACVA(true);
+    try {
+      const reportId = await saveACVAReport(createdProjectId, acvaReportContent, "submitted");
+      await updateProjectWithReport(createdProjectId, reportId, "under_review");
+      // Mock ACVA submission - in production would call real API or redirect
+      await new Promise((r) => setTimeout(r, 1500));
+      toast({
+        title: "Submitted to ACVA",
+        description: "Your report has been submitted for third-party verification.",
+      });
+      navigate("/seller");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to submit";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setIsSubmittingACVA(false);
+    }
   };
 
   return (
@@ -112,10 +218,10 @@ export default function CreateProject() {
         <Button
           variant="ghost"
           className="gap-2 mb-4"
-          onClick={() => navigate("/seller/projects")}
+          onClick={() => navigate("/seller")}
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to Projects
+          Back to Dashboard
         </Button>
         <h1 className="font-display text-3xl font-bold">
           Create New <span className="text-gradient-primary">Project</span>
@@ -394,6 +500,58 @@ export default function CreateProject() {
             </div>
           )}
 
+          {currentStep === 5 && (
+            <div className="space-y-6">
+              <h3 className="font-display text-xl font-semibold">ACVA Verification Report</h3>
+              <p className="text-sm text-muted-foreground">
+                Generate a structured report in ACVA format using AI, then submit for third-party verification.
+              </p>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="hero"
+                  className="gap-2"
+                  onClick={handleGenerateReport}
+                  disabled={isGeneratingReport}
+                >
+                  {isGeneratingReport ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  Generate ACVA Report
+                </Button>
+                {acvaReportContent && (
+                  <Button
+                    type="button"
+                    variant="default"
+                    className="gap-2"
+                    onClick={handleSubmitToACVA}
+                    disabled={isSubmittingACVA}
+                  >
+                    {isSubmittingACVA ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                    Submit to ACVA
+                  </Button>
+                )}
+              </div>
+              {acvaReportContent && (
+                <div className="space-y-2">
+                  <Label>Generated Report</Label>
+                  <Textarea
+                    readOnly
+                    value={acvaReportContent}
+                    rows={14}
+                    className="font-mono text-sm bg-muted/30"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Navigation */}
           <div className="flex justify-between mt-8 pt-6 border-t border-border">
             <Button
@@ -411,7 +569,7 @@ export default function CreateProject() {
                 Continue
                 <ArrowRight className="h-4 w-4" />
               </Button>
-            ) : (
+            ) : currentStep === 4 ? (
               <Button
                 variant="hero"
                 onClick={handleSubmit}
@@ -422,10 +580,18 @@ export default function CreateProject() {
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <>
-                    Submit Project
-                    <Check className="h-4 w-4" />
+                    Create Project & Continue
+                    <ArrowRight className="h-4 w-4" />
                   </>
                 )}
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => navigate("/seller")}
+                className="gap-2"
+              >
+                Back to Dashboard
               </Button>
             )}
           </div>

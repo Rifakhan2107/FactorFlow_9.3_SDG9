@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,16 +24,20 @@ import {
   Shield,
   ExternalLink,
 } from "lucide-react";
-import { ProjectType, CarbonNFT } from "@/types";
+import { ProjectType } from "@/types";
+import { getContractAddress } from "@/lib/contract";
+import { getListedNFTs } from "@/lib/firestore-listings";
+import type { MarketplaceListing } from "@/lib/firestore-listings";
 
-// Mock NFT data for marketplace
-const mockNFTs: (CarbonNFT & { project: { name: string; type: ProjectType; location: string; image: string } })[] = [
+// Fallback mock listings when no contract or Firestore listings
+const mockListings: MarketplaceListing[] = [
   {
-    id: "nft-1",
+    id: "mock_1",
+    tokenId: 1001,
     projectId: "proj-1",
     sellerId: "seller-1",
-    tokenId: "1001",
-    status: "listed",
+    contractAddress: "",
+    priceWei: "850000000000000000",
     priceETH: 0.85,
     metadata: {
       name: "Amazon Rainforest Preservation",
@@ -45,19 +49,16 @@ const mockNFTs: (CarbonNFT & { project: { name: string; type: ProjectType; locat
       vintage: 2024,
       location: "Brazil",
     },
-    project: {
-      name: "Amazon Rainforest Preservation",
-      type: "reforestation",
-      location: "Brazil",
-      image: "https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=600&q=80",
-    },
+    status: "listed",
+    listedAt: new Date(),
   },
   {
-    id: "nft-2",
+    id: "mock_2",
+    tokenId: 1002,
     projectId: "proj-2",
     sellerId: "seller-2",
-    tokenId: "1002",
-    status: "listed",
+    contractAddress: "",
+    priceWei: "1200000000000000000",
     priceETH: 1.2,
     metadata: {
       name: "Solar Farm Initiative",
@@ -69,108 +70,8 @@ const mockNFTs: (CarbonNFT & { project: { name: string; type: ProjectType; locat
       vintage: 2024,
       location: "India",
     },
-    project: {
-      name: "Solar Farm Initiative",
-      type: "renewable_energy",
-      location: "India",
-      image: "https://images.unsplash.com/photo-1509391366360-2e959784a276?w=600&q=80",
-    },
-  },
-  {
-    id: "nft-3",
-    projectId: "proj-3",
-    sellerId: "seller-3",
-    tokenId: "1003",
     status: "listed",
-    priceETH: 0.65,
-    metadata: {
-      name: "Mangrove Restoration",
-      description: "Coastal mangrove restoration for carbon capture",
-      image: "https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=600&q=80",
-      projectType: "ocean_conservation",
-      volumeTCO2e: 800,
-      verificationProof: "0x...",
-      vintage: 2023,
-      location: "Indonesia",
-    },
-    project: {
-      name: "Mangrove Restoration",
-      type: "ocean_conservation",
-      location: "Indonesia",
-      image: "https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=600&q=80",
-    },
-  },
-  {
-    id: "nft-4",
-    projectId: "proj-4",
-    sellerId: "seller-1",
-    tokenId: "1004",
-    status: "listed",
-    priceETH: 0.95,
-    metadata: {
-      name: "European Forest Conservation",
-      description: "Protected forest areas in central Europe",
-      image: "https://images.unsplash.com/photo-1448375240586-882707db888b?w=600&q=80",
-      projectType: "avoided_deforestation",
-      volumeTCO2e: 1200,
-      verificationProof: "0x...",
-      vintage: 2024,
-      location: "Germany",
-    },
-    project: {
-      name: "European Forest Conservation",
-      type: "avoided_deforestation",
-      location: "Germany",
-      image: "https://images.unsplash.com/photo-1448375240586-882707db888b?w=600&q=80",
-    },
-  },
-  {
-    id: "nft-5",
-    projectId: "proj-5",
-    sellerId: "seller-4",
-    tokenId: "1005",
-    status: "listed",
-    priceETH: 0.55,
-    metadata: {
-      name: "Clean Cookstove Distribution",
-      description: "Efficient cookstoves reducing biomass burning",
-      image: "https://images.unsplash.com/photo-1466637574441-749b8f19452f?w=600&q=80",
-      projectType: "clean_cookstoves",
-      volumeTCO2e: 600,
-      verificationProof: "0x...",
-      vintage: 2024,
-      location: "Kenya",
-    },
-    project: {
-      name: "Clean Cookstove Distribution",
-      type: "clean_cookstoves",
-      location: "Kenya",
-      image: "https://images.unsplash.com/photo-1466637574441-749b8f19452f?w=600&q=80",
-    },
-  },
-  {
-    id: "nft-6",
-    projectId: "proj-6",
-    sellerId: "seller-5",
-    tokenId: "1006",
-    status: "listed",
-    priceETH: 1.5,
-    metadata: {
-      name: "Wind Energy Farm",
-      description: "Offshore wind turbines generating clean energy",
-      image: "https://images.unsplash.com/photo-1532601224476-15c79f2f7a51?w=600&q=80",
-      projectType: "renewable_energy",
-      volumeTCO2e: 3200,
-      verificationProof: "0x...",
-      vintage: 2024,
-      location: "United Kingdom",
-    },
-    project: {
-      name: "Wind Energy Farm",
-      type: "renewable_energy",
-      location: "United Kingdom",
-      image: "https://images.unsplash.com/photo-1532601224476-15c79f2f7a51?w=600&q=80",
-    },
+    listedAt: new Date(),
   },
 ];
 
@@ -201,15 +102,33 @@ export default function MarketplacePage() {
   const [projectTypeFilter, setProjectTypeFilter] = useState<string>("all");
   const [priceRange, setPriceRange] = useState([0, 2]);
   const [showFilters, setShowFilters] = useState(false);
+  const [listings, setListings] = useState<MarketplaceListing[]>([]);
+  const [loadingListings, setLoadingListings] = useState(true);
+  const contractAddress = getContractAddress();
 
-  const filteredNFTs = mockNFTs.filter((nft) => {
+  useEffect(() => {
+    if (contractAddress) {
+      getListedNFTs(contractAddress)
+        .then(setListings)
+        .catch(() => setListings([]))
+        .finally(() => setLoadingListings(false));
+    } else {
+      setListings([]);
+      setLoadingListings(false);
+    }
+  }, [contractAddress]);
+
+  const displayListings = listings.length > 0 ? listings : mockListings;
+
+  const filteredNFTs = displayListings.filter((nft) => {
+    if (nft.status !== "listed") return false;
     const matchesSearch =
       nft.metadata.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       nft.metadata.location.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesType =
       projectTypeFilter === "all" || nft.metadata.projectType === projectTypeFilter;
     const matchesPrice =
-      nft.priceETH! >= priceRange[0] && nft.priceETH! <= priceRange[1];
+      nft.priceETH >= priceRange[0] && nft.priceETH <= priceRange[1];
     return matchesSearch && matchesType && matchesPrice;
   });
 
@@ -292,13 +211,14 @@ export default function MarketplacePage() {
 
         {/* Results Count */}
         <p className="text-sm text-muted-foreground mb-6">
-          Showing {filteredNFTs.length} of {mockNFTs.length} carbon credits
+          {loadingListings ? "Loading..." : `Showing ${filteredNFTs.length} of ${displayListings.length} carbon credits`}
         </p>
 
         {/* NFT Grid */}
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredNFTs.map((nft, index) => {
             const TypeIcon = projectTypeIcons[nft.metadata.projectType];
+            const imageUrl = nft.metadata.image || "https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=600&q=80";
             return (
               <Card
                 key={nft.id}
@@ -307,7 +227,7 @@ export default function MarketplacePage() {
               >
                 <div className="relative h-48">
                   <img
-                    src={nft.project.image}
+                    src={imageUrl}
                     alt={nft.metadata.name}
                     className="w-full h-full object-cover"
                   />
@@ -358,15 +278,17 @@ export default function MarketplacePage() {
                 </CardContent>
 
                 <CardFooter className="p-4 pt-0 flex gap-2">
-                  <Link to={`/marketplace/${nft.id}`} className="flex-1">
+                  <Link to={`/marketplace/${nft.tokenId}`} className="flex-1">
                     <Button variant="outline" className="w-full gap-2">
                       View Details
                       <ExternalLink className="h-3 w-3" />
                     </Button>
                   </Link>
-                  <Button variant="hero" className="flex-1">
-                    Buy Now
-                  </Button>
+                  <Link to={`/marketplace/${nft.tokenId}`} className="flex-1">
+                    <Button variant="hero" className="w-full">
+                      Buy Now
+                    </Button>
+                  </Link>
                 </CardFooter>
               </Card>
             );
